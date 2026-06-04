@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio Version 18
+
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SILK - Standalone Plugin", "SILK_StandalonePlugin.vcxproj", "{67EF187F-FAD0-B882-EB21-AAF482BCA9F9}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A1907415-B38B-F18A-4FC7-11568AB3D15E} = {A1907415-B38B-F18A-4FC7-11568AB3D15E}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SILK - VST3", "SILK_VST3.vcxproj", "{871F756B-6132-5593-0333-75BF106D78F0}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A1907415-B38B-F18A-4FC7-11568AB3D15E} = {A1907415-B38B-F18A-4FC7-11568AB3D15E}
+		{68557361-7F5C-10F6-FE7A-A86624412EC1} = {68557361-7F5C-10F6-FE7A-A86624412EC1}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SILK - Shared Code", "SILK_SharedCode.vcxproj", "{A1907415-B38B-F18A-4FC7-11568AB3D15E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SILK - VST3 Manifest Helper", "SILK_VST3ManifestHelper.vcxproj", "{68557361-7F5C-10F6-FE7A-A86624412EC1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{871F756B-6132-5593-0333-75BF106D78F0}.Debug|x64.ActiveCfg = Debug|x64
+		{871F756B-6132-5593-0333-75BF106D78F0}.Debug|x64.Build.0 = Debug|x64
+		{871F756B-6132-5593-0333-75BF106D78F0}.Release|x64.ActiveCfg = Release|x64
+		{871F756B-6132-5593-0333-75BF106D78F0}.Release|x64.Build.0 = Release|x64
+		{67EF187F-FAD0-B882-EB21-AAF482BCA9F9}.Debug|x64.ActiveCfg = Debug|x64
+		{67EF187F-FAD0-B882-EB21-AAF482BCA9F9}.Debug|x64.Build.0 = Debug|x64
+		{67EF187F-FAD0-B882-EB21-AAF482BCA9F9}.Release|x64.ActiveCfg = Release|x64
+		{67EF187F-FAD0-B882-EB21-AAF482BCA9F9}.Release|x64.Build.0 = Release|x64
+		{A1907415-B38B-F18A-4FC7-11568AB3D15E}.Debug|x64.ActiveCfg = Debug|x64
+		{A1907415-B38B-F18A-4FC7-11568AB3D15E}.Debug|x64.Build.0 = Debug|x64
+		{A1907415-B38B-F18A-4FC7-11568AB3D15E}.Release|x64.ActiveCfg = Release|x64
+		{A1907415-B38B-F18A-4FC7-11568AB3D15E}.Release|x64.Build.0 = Release|x64
+		{68557361-7F5C-10F6-FE7A-A86624412EC1}.Debug|x64.ActiveCfg = Debug|Win32
+		{68557361-7F5C-10F6-FE7A-A86624412EC1}.Debug|x64.Build.0 = Debug|Win32
+		{68557361-7F5C-10F6-FE7A-A86624412EC1}.Release|x64.ActiveCfg = Release|Win32
+		{68557361-7F5C-10F6-FE7A-A86624412EC1}.Release|x64.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
