@@ -1,3 +1,9 @@
+/*
+  ==============================================================================
+    This file contains the basic framework code for a JUCE plugin processor.
+  ==============================================================================
+*/
+
 #pragma once
 
 #include <JuceHeader.h>
@@ -44,14 +50,18 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     //==============================================================================
-    // Método público necesario para que el Editor se conecte a la perilla de saturación
+    // Método de acceso al APVTS para los SliderAttachments y ButtonAttachments del Editor
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
+
+    // Función que lee el nivel del VU de manera atómica e hilo-segura desde el Editor
+    float getVULevel() const { return vuLevel.load(); }
 
 private:
     //==============================================================================
-    // Árbol que gestionará de forma segura el parámetro de saturación
     juce::AudioProcessorValueTreeState apvts;
 
-    // Macro de JUCE corregida con el nombre exacto de tu clase actual
+    // Variable atómica para almacenar el nivel suavizado del VÚmetro logarítmico (0.0f a 1.0f)
+    std::atomic<float> vuLevel{ 0.0f };
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SILKAudioProcessor)
 };

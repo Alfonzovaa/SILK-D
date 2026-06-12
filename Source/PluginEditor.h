@@ -24,7 +24,7 @@ public:
         float sliderPosProportional, float startAngle, float endAngle,
         juce::Slider& slider) override
     {
-        auto radius = juce::jmin(width, height) / 2.0f - 10.0f;
+        auto radius = juce::jmin(width, height) / 2.0f - 6.0f;
         auto centreX = x + width * 0.5f;
         auto centreY = y + height * 0.5f;
         auto rx = centreX - radius;
@@ -33,25 +33,25 @@ public:
         auto angle = startAngle + sliderPosProportional * (endAngle - startAngle);
 
         g.setColour(slider.findColour(juce::Slider::rotarySliderOutlineColourId));
-        g.drawEllipse(rx, ry, rw, rw, 4.0f);
+        g.drawEllipse(rx, ry, rw, rw, 3.0f);
 
         juce::Path fillPath;
         fillPath.addCentredArc(centreX, centreY, radius, radius, 0.0f, startAngle, angle, true);
         g.setColour(slider.findColour(juce::Slider::rotarySliderFillColourId));
-        g.strokePath(fillPath, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.strokePath(fillPath, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        auto dialRadius = radius - 6.0f;
+        auto dialRadius = radius - 4.0f;
         juce::ColourGradient gradient(juce::Colour::fromString("FF3A3A3C"), centreX, centreY - dialRadius,
             juce::Colour::fromString("FF1C1C1E"), centreX, centreY + dialRadius, false);
         g.setGradientFill(gradient);
         g.fillEllipse(centreX - dialRadius, centreY - dialRadius, dialRadius * 2.0f, dialRadius * 2.0f);
 
         g.setColour(juce::Colour::fromString("FFA855F7"));
-        g.drawEllipse(centreX - dialRadius, centreY - dialRadius, dialRadius * 2.0f, dialRadius * 2.0f, 1.5f);
+        g.drawEllipse(centreX - dialRadius, centreY - dialRadius, dialRadius * 2.0f, dialRadius * 2.0f, 1.0f);
 
         juce::Path p;
         auto pointerLength = dialRadius * 0.7f;
-        auto pointerThickness = 3.0f;
+        auto pointerThickness = 2.0f;
         p.addRectangle(-pointerThickness * 0.5f, -dialRadius, pointerThickness, pointerLength);
         p.applyTransform(juce::AffineTransform::rotation(angle).translated(centreX, centreY));
         g.setColour(juce::Colours::white.withAlpha(0.8f));
@@ -60,7 +60,8 @@ public:
 };
 
 // ==============================================================================
-class SILKAudioProcessorEditor : public juce::AudioProcessorEditor
+class SILKAudioProcessorEditor : public juce::AudioProcessorEditor,
+    public juce::Timer
 {
 public:
     SILKAudioProcessorEditor(SILKAudioProcessor&);
@@ -69,18 +70,22 @@ public:
     //==============================================================================
     void paint(juce::Graphics&) override;
     void resized() override;
+    void timerCallback() override;
 
 private:
     SILKAudioProcessor& audioProcessor;
 
     juce::Slider saturationSlider;
+    juce::Slider outGainSlider; // Nueva perilla pequeña OUT
     juce::ToggleButton bypassButton;
     juce::ToggleButton phaseButton;
 
     CustomLookAndFeel customLookAndFeel;
 
-    // CORRECCIÓN: Declaración del attachment para enlazar el slider con el APVTS del procesador
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> saturationAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outGainAttachment; // Attachment de la nueva perilla
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> phaseAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SILKAudioProcessorEditor)
 };
