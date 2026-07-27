@@ -1,13 +1,10 @@
-/*
-  ==============================================================================
-    This file contains the basic framework code for a JUCE plugin processor.
-  ==============================================================================
-*/
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-//==============================================================================
+// =======================================================
+// CONSTRUCTOR (VERSIÓN SEGURA APVTS)
+// =======================================================
+
 SILKAudioProcessor::SILKAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
     : AudioProcessor(BusesProperties()
@@ -19,129 +16,190 @@ SILKAudioProcessor::SILKAudioProcessor()
 #endif
     ),
 #endif
-    apvts(*this, nullptr, "Parameters", {
-        std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("saturation", 1), "Saturation", 0.0f, 10.0f, 0.0f),
-        std::make_unique<juce::AudioParameterFloat>(juce::ParameterID("inputGain", 1), "Input Gain", -24.0f, 12.0f, 0.0f), // Nueva perilla
-        std::make_unique<juce::AudioParameterBool>(juce::ParameterID("bypass", 1), "Bypass", false),
-        std::make_unique<juce::AudioParameterBool>(juce::ParameterID("phase", 1), "Phase Boost", false)
+    apvts(*this, nullptr, "Parameters",
+        {
+            std::make_unique<juce::AudioParameterFloat>("saturation", "Saturation", 0.0f, 10.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("inputGain", "Input Gain", -24.0f, 12.0f, 0.0f),
+            std::make_unique<juce::AudioParameterFloat>("outGain", "Output Gain", -24.0f, 12.0f, 0.0f),
+            std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false),
+            std::make_unique<juce::AudioParameterBool>("phase", "Mode Switch", false)
         })
-{}
+{
+}
 
 SILKAudioProcessor::~SILKAudioProcessor() {}
 
-//==============================================================================
+// =======================================================
+// BASIC INFO
+// =======================================================
+
 const juce::String SILKAudioProcessor::getName() const { return JucePlugin_Name; }
 bool SILKAudioProcessor::acceptsMidi() const { return false; }
 bool SILKAudioProcessor::producesMidi() const { return false; }
 bool SILKAudioProcessor::isMidiEffect() const { return false; }
 double SILKAudioProcessor::getTailLengthSeconds() const { return 0.0; }
+
 int SILKAudioProcessor::getNumPrograms() { return 1; }
 int SILKAudioProcessor::getCurrentProgram() { return 0; }
-void SILKAudioProcessor::setCurrentProgram(int index) {}
-const juce::String SILKAudioProcessor::getProgramName(int index) { return {}; }
-void SILKAudioProcessor::changeProgramName(int index, const juce::String& newName) {}
+void SILKAudioProcessor::setCurrentProgram(int) {}
+const juce::String SILKAudioProcessor::getProgramName(int) { return {}; }
+void SILKAudioProcessor::changeProgramName(int, const juce::String&) {}
 
-//==============================================================================
-void SILKAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {}
+// =======================================================
+// SETUP
+// =======================================================
+
+void SILKAudioProcessor::prepareToPlay(double, int) {}
 void SILKAudioProcessor::releaseResources() {}
 
-#ifndef JucePlugin_PreferredChannelConfigurations
 bool SILKAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-        && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
-    return true;
+    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono()
+        || layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
-#endif
 
-void SILKAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+// =======================================================
+// 🔥 SATURACIÓN FINAL (PRO ANALOG STYLE)
+// =======================================================
+
+static inline float analogSaturator(float x, float drive, bool hardMode)
+{
+    x *= drive;
+
+    // SOFT MODE → tape warm / smooth glue
+    if (!hardMode)
+    {
+        return std::tanh(x * 0.75f);
+    }
+
+    // HARD MODE → tube + asymmetry (más armónicos reales)
+    float even = std::tanh(x * 1.2f);
+    float odd = x / (1.0f + 0.25f * std::abs(x));
+
+    return (even * 0.6f) + (odd * 0.4f);
+}
+
+// =======================================================
+// PROCESS BLOCK
+// =======================================================
+
+void SILKAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
+    juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+
     auto totalNumInputChannels = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+    for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear(i, 0, buffer.getNumSamples());
 
-    // 1. Cargar parámetros del APVTS
     bool isBypassed = apvts.getRawParameterValue("bypass")->load() > 0.5f;
-    bool isPhaseBoostActive = apvts.getRawParameterValue("phase")->load() > 0.5f;
-    auto saturationValue = apvts.getRawParameterValue("saturation")->load();
+    bool isModeActive = apvts.getRawParameterValue("phase")->load() > 0.5f;
 
-    // Convertir los decibelios de la nueva perilla OUT a ganancia lineal
-    auto inputGainDB = apvts.getRawParameterValue("inputGain")->load();
-    float inputGainLinear = juce::Decibels::decibelsToGain(inputGainDB);
+    float saturationValue = apvts.getRawParameterValue("saturation")->load();
+
+    float inputGain = juce::Decibels::decibelsToGain(
+        apvts.getRawParameterValue("inputGain")->load());
+
+    float outGain = juce::Decibels::decibelsToGain(
+        apvts.getRawParameterValue("outGain")->load());
 
     if (isBypassed)
-    {
         saturationValue = 0.0f;
-    }
 
-    float drive = 1.0f + (saturationValue * 2.0f);
+    // 🔥 DRIVE EXPONENCIAL (nivel hardware real)
+    float drive = std::pow(10.0f, saturationValue * 0.12f);
 
-    if (isPhaseBoostActive && !isBypassed)
+    if (isModeActive && !isBypassed)
+        drive *= 2.0f;
+
+    float gainComp = 1.0f / std::sqrt(drive);
+
+    // ===================================================
+    // DSP LOOP
+    // ===================================================
+
+    for (int ch = 0; ch < totalNumInputChannels; ++ch)
     {
-        drive *= 2.5f;
-    }
+        auto* data = buffer.getWritePointer(ch);
 
-    float gainCompensation = 1.0f / std::sqrt(drive);
-
-    // 2. Bucle de procesamiento de audio
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer(channel);
-
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
-            // Aplicar el control de volumen OUT a la entrada
-            float inputSample = channelData[sample] * inputGainLinear;
+            float x = data[i] * inputGain;
 
             if (isBypassed)
             {
-                channelData[sample] = inputSample;
+                data[i] = x * outGain;
             }
             else
             {
-                float drivenSample = inputSample * drive;
-                float saturatedSample = std::tanh(drivenSample);
-                channelData[sample] = saturatedSample * gainCompensation;
+                float y = analogSaturator(x, drive, isModeActive);
+                data[i] = y * gainComp * outGain;
             }
         }
     }
 
-    // ---- CÁLCULO DEL VU METER LOGARÍTMICO (MÁS SENSIBLE) ----
+    // ===================================================
+    // VU METER
+    // ===================================================
+
     float maxPeak = 0.0f;
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+
+    for (int ch = 0; ch < totalNumInputChannels; ++ch)
     {
-        float peak = buffer.getMagnitude(channel, 0, buffer.getNumSamples());
+        float peak = buffer.getMagnitude(ch, 0, buffer.getNumSamples());
         if (peak > maxPeak)
             maxPeak = peak;
     }
 
-    // Convertimos a Decibelios para que sea mucho más sensible a sonidos bajos
     float peakDB = juce::Decibels::gainToDecibels(maxPeak);
 
-    // Mapeamos un rango útil de -40 dB (vacio) hasta 0 dB (lleno total) a una escala de 0.0 a 1.0
-    float normalizedVU = juce::jmap(peakDB, -40.0f, 0.0f, 0.0f, 1.0f);
-    normalizedVU = juce::jlimit(0.0f, 1.0f, normalizedVU);
+    if (!isBypassed && saturationValue > 0.1f)
+        peakDB += saturationValue * 1.2f;
 
-    // Aplicar decaimiento suave (Ballistics)
-    float currentVU = vuLevel.load();
-    if (normalizedVU > currentVU)
-    {
-        vuLevel.store(normalizedVU);
-    }
+    float vu = juce::jmap(peakDB, -36.0f, 3.0f, 0.0f, 1.0f);
+    vu = juce::jlimit(0.0f, 1.0f, vu);
+
+    float current = vuLevel.load();
+
+    if (vu > current)
+        vuLevel.store(vu);
     else
-    {
-        vuLevel.store(currentVU * 0.88f); // Decaimiento fluido
-    }
+        vuLevel.store(current * 0.88f);
 }
 
-//==============================================================================
-bool SILKAudioProcessor::hasEditor() const { return true; }
-juce::AudioProcessorEditor* SILKAudioProcessor::createEditor() { return new SILKAudioProcessorEditor(*this); }
-void SILKAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {}
-void SILKAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {}
+// =======================================================
+// STATE SAVE / LOAD
+// =======================================================
 
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new SILKAudioProcessor(); }
+void SILKAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
+{
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml(state.createXml());
+
+    if (xml)
+        copyXmlToBinary(*xml, destData);
+}
+
+void SILKAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
+{
+    std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
+
+    if (xmlState && xmlState->hasTagName(apvts.state.getType()))
+        apvts.replaceState(juce::ValueTree::fromXml(*xmlState));
+}
+
+// =======================================================
+
+bool SILKAudioProcessor::hasEditor() const { return true; }
+
+juce::AudioProcessorEditor* SILKAudioProcessor::createEditor()
+{
+    return new SILKAudioProcessorEditor(*this);
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new SILKAudioProcessor();
+}

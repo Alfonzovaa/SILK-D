@@ -1,199 +1,227 @@
-/*
-  ==============================================================================
-    This file contains the basic framework code for a JUCE plugin editor.
-  ==============================================================================
-*/
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-//==============================================================================
 SILKAudioProcessorEditor::SILKAudioProcessorEditor(SILKAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p)
 {
-    // 1. Slider de Saturación Central
+    setSize(500, 500);
+
+    // ===================== SATURATION (DRIVE) =====================
     saturationSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     saturationSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    saturationSlider.setLookAndFeel(&customLookAndFeel);
+    saturationSlider.setMouseDragSensitivity(300);
+    saturationSlider.setAlpha(0.0f);
     addAndMakeVisible(saturationSlider);
 
     saturationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessor.getAPVTS(), "saturation", saturationSlider);
 
-    // 2. NUEVA PERILLA PEQUEÑA "OUT" (Abajo a la Derecha)
+    // ===================== OUT =====================
     outGainSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     outGainSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    outGainSlider.setLookAndFeel(&customLookAndFeel);
+    outGainSlider.setMouseDragSensitivity(150);
+    outGainSlider.setAlpha(0.0f);
     addAndMakeVisible(outGainSlider);
 
     outGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-        audioProcessor.getAPVTS(), "inputGain", outGainSlider);
+        audioProcessor.getAPVTS(), "outGain", outGainSlider);
 
-    // 3. Botón Bypass
-    bypassButton.setButtonText("");
-    bypassButton.setAlpha(0.0f);
+    // ===================== BUTTONS =====================
     addAndMakeVisible(bypassButton);
+    addAndMakeVisible(phaseButton);
 
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.getAPVTS(), "bypass", bypassButton);
 
-    // 4. Botón Phase
-    phaseButton.setButtonText("");
-    phaseButton.setAlpha(0.0f);
-    addAndMakeVisible(phaseButton);
-
     phaseAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.getAPVTS(), "phase", phaseButton);
 
-    setSize(500, 500);
-    startTimerHz(60);
+    // ===================== ESTADO INICIAL DE BOTONES =====================
+    phaseButton.setToggleState(false, juce::dontSendNotification);
+    bypassButton.setAlpha(0.0f);
+    phaseButton.setAlpha(0.0f);
+
+    // ===================== CARGA DE IMÁGENES =====================
+    knobImage = juce::ImageCache::getFromMemory(
+        BinaryData::Knob_Saturation_png,
+        BinaryData::Knob_Saturation_pngSize
+    );
+
+    outKnobImage = juce::ImageCache::getFromMemory(
+        BinaryData::PERILLA_LOW_1_png,
+        BinaryData::PERILLA_LOW_1_pngSize
+    );
+
+    backgroundImage = juce::ImageCache::getFromMemory(
+        BinaryData::BACKGROUND_png,
+        BinaryData::BACKGROUND_pngSize
+    );
+
+    vuImage = juce::ImageCache::getFromMemory(
+        BinaryData::VU_png,
+        BinaryData::VU_pngSize
+    );
+
+    bypassOn = juce::ImageCache::getFromMemory(BinaryData::BYPASS_ON_png, BinaryData::BYPASS_ON_pngSize);
+    bypassOff = juce::ImageCache::getFromMemory(BinaryData::BYPASS_OFF_png, BinaryData::BYPASS_OFF_pngSize);
+
+    phaseOn = juce::ImageCache::getFromMemory(BinaryData::MODE_ON_png, BinaryData::MODE_ON_pngSize);
+    phaseOff = juce::ImageCache::getFromMemory(BinaryData::MODE_HARD_png, BinaryData::MODE_HARD_pngSize);
+
+    startTimerHz(50);
 }
 
 SILKAudioProcessorEditor::~SILKAudioProcessorEditor()
 {
     stopTimer();
-    saturationSlider.setLookAndFeel(nullptr);
-    outGainSlider.setLookAndFeel(nullptr);
 }
 
-//==============================================================================
 void SILKAudioProcessorEditor::timerCallback()
 {
-    repaint();
+    repaint(vuArea);
 }
 
-//==============================================================================
 void SILKAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour::fromString("FF1A1C1E"));
+    g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
 
-    // ---- ENCABEZADO ----
-    g.setColour(juce::Colour::fromString("FFCFD3D6"));
-    g.setFont(juce::Font("Helvetica", 22.0f, juce::Font::plain));
-    g.drawText("BLUEHALL", 40, 35, 120, 30, juce::Justification::left);
+    // ===================== BACKGROUND =====================
+    if (backgroundImage.isValid())
+        g.drawImage(backgroundImage, getLocalBounds().toFloat());
+    else
+        g.fillAll(juce::Colours::black);
 
-    g.setColour(juce::Colour::fromString("FF8E9399"));
-    g.drawText("STUDIOS", 165, 35, 120, 30, juce::Justification::left);
-    g.drawEllipse(275, 42, 16, 16, 1.5f);
-    g.drawEllipse(279, 42, 8, 16, 1.0f);
-    g.drawLine(271, 50, 295, 50, 1.0f);
+    float angleStart = juce::MathConstants<float>::pi * 0.0f;
+    float angleEnd = angleStart + juce::MathConstants<float>::pi * 1.61f;
 
-    // ---- BOTONES BYPASS Y PHASE ----
-    bool bypassState = audioProcessor.getAPVTS().getRawParameterValue("bypass")->load() > 0.5f;
-    bool phaseState = audioProcessor.getAPVTS().getRawParameterValue("phase")->load() > 0.5f;
+    // ===================== SATURATION KNOB (DRIVE) =====================
+    const float centerX = 251.0f;
+    const float centerY = 203.0f;
+    const float knobSize = 170.0f;
 
-    int bypassX = 95;
-    int bypassY = 145;
-    if (bypassState) {
-        g.setColour(juce::Colour::fromString("FFA78BFA"));
-        g.drawRoundedRectangle(bypassX, bypassY, 32, 32, 4.0f, 2.5f);
-        g.fillEllipse(bypassX - 15, bypassY + 11, 8, 8);
-    }
-    else {
-        g.setColour(juce::Colour::fromString("FF4C1D95"));
-        g.drawRoundedRectangle(bypassX, bypassY, 32, 32, 4.0f, 1.5f);
-        g.setColour(juce::Colour::fromString("FF2E1065"));
-        g.fillEllipse(bypassX - 15, bypassY + 11, 8, 8);
-    }
-    g.setColour(juce::Colour::fromString("FF8E9399"));
-    g.setFont(juce::Font("Helvetica", 13.0f, juce::Font::plain));
-    g.drawText("BYPASS", bypassX - 24, bypassY + 40, 80, 20, juce::Justification::centred);
+    auto knobBounds = juce::Rectangle<float>(
+        centerX - knobSize / 2.0f,
+        centerY - knobSize / 2.0f,
+        knobSize,
+        knobSize
+    );
 
-    int phaseX = 375;
-    int phaseY = 145;
-    if (phaseState) {
-        g.setColour(juce::Colour::fromString("FF34D399"));
-        g.drawRoundedRectangle(phaseX, phaseY, 32, 32, 4.0f, 2.5f);
-        g.fillEllipse(phaseX - 15, phaseY + 11, 8, 8);
-    }
-    else {
-        g.setColour(juce::Colour::fromString("FF064E3B"));
-        g.drawRoundedRectangle(phaseX, phaseY, 32, 32, 4.0f, 1.5f);
-        g.setColour(juce::Colour::fromString("FF022C22"));
-        g.fillEllipse(phaseX - 15, phaseY + 11, 8, 8);
-    }
-    g.setColour(juce::Colour::fromString("FF8E9399"));
-    g.drawText("MODE", phaseX - 24, phaseY + 40, 80, 20, juce::Justification::centred);
+    g.saveState();
 
-    // ---- DIAL CENTRAL NUMERACIÓN ----
-    g.setFont(juce::Font("Helvetica", 16.0f, juce::Font::plain));
-    g.drawText("0", 195, 305, 20, 20, juce::Justification::centred);
-    g.drawText("1", 160, 260, 20, 20, juce::Justification::centred);
-    g.drawText("2", 150, 210, 20, 20, juce::Justification::centred);
-    g.drawText("3", 165, 165, 20, 20, juce::Justification::centred);
-    g.drawText("4", 205, 135, 20, 20, juce::Justification::centred);
-    g.drawText("5", 240, 125, 20, 20, juce::Justification::centred);
-    g.drawText("6", 275, 135, 20, 20, juce::Justification::centred);
-    g.drawText("7", 315, 165, 20, 20, juce::Justification::centred);
-    g.drawText("8", 330, 210, 20, 20, juce::Justification::centred);
-    g.drawText("9", 320, 260, 20, 20, juce::Justification::centred);
-    g.drawText("10", 285, 305, 25, 20, juce::Justification::centred);
+    float value = (float)saturationSlider.getValue();
+    float angle = juce::jmap(value,
+        (float)saturationSlider.getMinimum(),
+        (float)saturationSlider.getMaximum(),
+        angleStart,
+        angleEnd);
 
-    g.setColour(juce::Colour::fromString("FFD1D5DB"));
-    g.setFont(juce::Font("Helvetica", 22.0f, juce::Font::plain));
-    g.drawText("SATURATION", 150, 325, 200, 30, juce::Justification::centred);
+    g.addTransform(juce::AffineTransform::rotation(
+        angle,
+        knobBounds.getCentreX(),
+        knobBounds.getCentreY()
+    ));
 
-    // ---- DECORACIÓN PUNTOS DE LA PERILLA "OUT" ----
-    int outCenterX = 425;
-    int outCenterY = 405;
-    g.setColour(juce::Colour::fromString("FF4B5563"));
-    for (int i = 0; i < 12; ++i)
+    if (knobImage.isValid())
+        g.drawImage(knobImage, knobBounds, juce::RectanglePlacement::centred);
+
+    g.restoreState();
+
+    // ===================== OUT KNOB =====================
+    auto outBounds = outGainSlider.getBounds().toFloat();
+
+    g.saveState();
+
+    float outValue = (float)outGainSlider.getValue();
+    float outAngle = juce::jmap(outValue,
+        (float)outGainSlider.getMinimum(),
+        (float)outGainSlider.getMaximum(),
+        angleStart,
+        angleEnd);
+
+    g.addTransform(juce::AffineTransform::rotation(
+        outAngle,
+        outBounds.getCentreX(),
+        outBounds.getCentreY()
+    ));
+
+    if (outKnobImage.isValid())
+        g.drawImage(outKnobImage, outBounds, juce::RectanglePlacement::centred);
+
+    g.restoreState();
+
+    // ===================== BYPASS DIBUJO DE IMÁGENES =====================
     {
-        float angle = juce::jmap((float)i, 0.0f, 11.0f, -2.3f, 2.3f);
-        int dotX = outCenterX + std::sin(angle) * 32.0f;
-        int dotY = outCenterY - std::cos(angle) * 32.0f;
-        g.fillEllipse(dotX - 1.5f, dotY - 1.5f, 3.0f, 3.0f);
+        auto b = bypassButton.getBounds().toFloat();
+        bool state = bypassButton.getToggleState();
+
+        g.drawImage(state ? bypassOn : bypassOff,
+            b,
+            juce::RectanglePlacement::centred);
     }
 
-    // Texto "OUT" debajo de la perilla chica
-    g.setColour(juce::Colour::fromString("FF9CA3AF"));
-    g.setFont(juce::Font("Helvetica", 18.0f, juce::Font::plain));
-    g.drawText("OUT", outCenterX - 30, outCenterY + 32, 60, 20, juce::Justification::centred);
-
-    // ---- GRÁFICO DEL VU METER LOGARÍTMICO ----
-    int vuX = 175;
-    int vuY = 370;
-    int vuW = 150;
-    int vuH = 75;
-
-    g.setColour(juce::Colour::fromString("FF0F1113"));
-    g.fillRoundedRectangle(vuX, vuY, vuW, vuH, 6.0f);
-    g.setColour(juce::Colour::fromString("FF2D3139"));
-    g.drawRoundedRectangle(vuX, vuY, vuW, vuH, 6.0f, 1.5f);
-
-    float vuValue = audioProcessor.getVULevel();
-    float startAngle = -1.0f;
-    float endAngle = startAngle + (vuValue * 2.0f);
-
-    if (vuValue > 0.005f)
+    // ===================== MODE DIBUJAR IMÁGENES =====================
     {
-        juce::ColourGradient vuGrad(juce::Colour::fromString("FF10B981"), vuX + 20, vuY + 40,
-            juce::Colour::fromString("FF8B5CF6"), vuX + vuW - 20, vuY + 40, false);
-        vuGrad.addColour(0.6, juce::Colour::fromString("FFF59E0B"));
-        g.setGradientFill(vuGrad);
+        auto p = phaseButton.getBounds().toFloat();
 
-        juce::Path vuArc;
-        vuArc.addCentredArc(vuX + vuW / 2, vuY + vuH + 10, 60, 50, 0.0f, startAngle, endAngle, true);
-        g.strokePath(vuArc, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        bool isHard = audioProcessor.getAPVTS()
+            .getRawParameterValue("phase")->load() > 0.5f;
+
+        const juce::Image& modeImg =
+            isHard
+            ? juce::ImageCache::getFromMemory(BinaryData::MODE_HARD_png, BinaryData::MODE_HARD_pngSize)
+            : juce::ImageCache::getFromMemory(BinaryData::MODE_ON_png, BinaryData::MODE_ON_pngSize);
+
+        if (modeImg.isValid())
+            g.drawImage(modeImg,
+                p,
+                juce::RectanglePlacement::centred);
     }
 
-    g.setColour(juce::Colour::fromString("FF6B7280"));
-    g.setFont(juce::Font("Helvetica", 12.0f, juce::Font::plain));
-    g.drawText("VU", vuX, vuY + vuH - 22, vuW, 15, juce::Justification::centred);
+    // =========================================================================
+    // VÚMETRO: BARRA OPTIMIZADA Y REDUCIDA EN PROPORCIÓN
+    // =========================================================================
+    float currentLevel = audioProcessor.getVULevel();
 
-    // ---- TEXTO DE MARCA INFERIOR ----
-    g.setColour(juce::Colour::fromString("FF9CA3AF"));
-    g.setFont(juce::Font("Helvetica", 26.0f, juce::Font::plain));
-    g.drawText("SILK D", 40, 435, 150, 35, juce::Justification::left);
+    if (vuImage.isValid())
+    {
+        g.saveState();
 
+        // Recorte protector proporcional para el tamaño más compacto
+        g.reduceClipRegion(juce::Rectangle<int>(vuArea.getX() + 3, vuArea.getY(), vuArea.getWidth() - 6, vuArea.getHeight()));
+
+        // Proporciones de márgenes internos reducidas para la nueva escala
+        float usableWidth = (float)vuArea.getWidth() - 20.0f;
+        float barWidthCurrent = juce::jmap(currentLevel, 0.0f, 1.0f, 0.0f, usableWidth);
+
+        // Ajustamos la barra a la escala del nuevo cuadro reducido (10px de sangría lateral, 8px arriba)
+        juce::Rectangle<float> ledBar((float)vuArea.getX() + 10.0f, (float)vuArea.getY() + 8.0f, barWidthCurrent, (float)vuArea.getHeight() - 16.0f);
+
+        juce::ColourGradient ledGradient;
+        ledGradient.point1 = { (float)vuArea.getX() + 10.0f, (float)vuArea.getY() };
+        ledGradient.point2 = { (float)vuArea.getX() + 10.0f + usableWidth, (float)vuArea.getY() };
+        ledGradient.isRadial = false;
+
+        ledGradient.addColour(0.0, juce::Colour::fromRGBA(34, 214, 52, 255));
+        ledGradient.addColour(0.55, juce::Colour::fromRGBA(242, 227, 46, 255));
+        ledGradient.addColour(0.80, juce::Colour::fromRGBA(169, 39, 245, 255));
+
+        g.setGradientFill(ledGradient);
+        g.fillRect(ledBar);
+
+        g.restoreState();
+
+        g.drawImage(vuImage, vuArea.toFloat(), juce::RectanglePlacement::stretchToFit);
+    }
 }
 
 void SILKAudioProcessorEditor::resized()
 {
-    saturationSlider.setBounds(175, 150, 150, 150);
-    bypassButton.setBounds(88, 138, 45, 45);
-    phaseButton.setBounds(368, 138, 45, 45);
+    saturationSlider.setBounds(166, 118, 170, 170);
+    outGainSlider.setBounds(420, 409, 45, 45);
 
-    // Ubicación física de la nueva perilla OUT (Centro en 425, 405. Tamaño 50x50)
-    outGainSlider.setBounds(400, 380, 50, 50);
+    bypassButton.setBounds(55, 126, 45, 45);
+    phaseButton.setBounds(396, 126, 45, 45);
+
+    // NUEVO TAMAÑO COMPACTO: Ancho 180, Alto 92. 
+    vuArea.setBounds(160, 350, 180, 92);
 }
